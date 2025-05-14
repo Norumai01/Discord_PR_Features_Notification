@@ -1,0 +1,55 @@
+name: Discord Pull Request Notification
+on:
+  pull_request:
+    types: [closed]
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  notify-discord:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notifying Discord
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_USERNAME: ${{ github.event.pull_request.user.login }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO_NAME: ${{ github.repository }}
+          AUTHOR_AVATAR: ${{ github.event.pull_request.user.avatar_url }}
+          CHANGED_FILES: ${{ github.event.pull_request.changed_files }}
+          ADDITIONS: ${{ github.event.pull_request.additions }}
+          DELETIONS: ${{ github.event.pull_request.deletions }}
+        run: |
+          # Create the JSON payload directly without complex string manipulation
+          cat > discord_payload.json << EOF
+          {
+            "embeds": [{
+              "title": "🚀 New Update Deployed",
+              "description": "$PR_TITLE",
+              "url": "$PR_URL",
+              "color": 5814783,
+              "fields": [
+                {
+                  "name": "👨‍💻 Author",
+                  "value": "$PR_USERNAME"
+                },
+                {
+                  "name": "📊 Changes",
+                  "value": "**$CHANGED_FILES** files changed with **+$ADDITIONS** additions and **-$DELETIONS** deletions"
+                }
+              ],
+              "thumbnail": {
+                "url": "$AUTHOR_AVATAR"
+              },
+              "footer": {
+                "text": "PR #$PR_NUMBER merged to main branch"
+              }
+            }]
+          }
+          EOF
+          
+          # Send the JSON file directly to avoid escaping issues
+          curl -H "Content-Type: application/json" -d @discord_payload.json $DISCORD_WEBHOOK
