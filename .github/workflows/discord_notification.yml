@@ -24,11 +24,7 @@ jobs:
           ADDITIONS: ${{ github.event.pull_request.additions }}
           DELETIONS: ${{ github.event.pull_request.deletions }}
         run: |
-          PROCESSED_BODY=$(echo "$PR_BODY" | sed 's/\[x\]/✅/g' | sed 's/\[ \]/❌/g')
-          
-          # Escape newlines and quotes for JSON
-          PROCESSED_BODY="${PROCESSED_BODY//$'\n'/\\n}"
-          PROCESSED_BODY="${PROCESSED_BODY//\"/\\\"}"
+          PROCESSED_BODY=$(echo "$PR_BODY" | sed 's/\[x\]/✅/g' | sed 's/\[ \]/❌/g' | sed ':a;N;$!ba;s/\n\n/PARAGRAPH_BREAK/g' | tr '\n' ' ' | sed 's/PARAGRAPH_BREAK/\n\n/g')
 
           jq -n \
             --arg title "🚀 New Update Deployed!!!" \
