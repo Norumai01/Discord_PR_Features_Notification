@@ -17,28 +17,40 @@ jobs:
           PR_URL: ${{ github.event.pull_request.html_url }}
           PR_USERNAME: ${{ github.event.pull_request.user.login }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_BODY: ${{ github.event.pull_request.body }}
           REPO_NAME: ${{ github.repository }}
           AUTHOR_AVATAR: ${{ github.event.pull_request.user.avatar_url }}
           CHANGED_FILES: ${{ github.event.pull_request.changed_files }}
           ADDITIONS: ${{ github.event.pull_request.additions }}
           DELETIONS: ${{ github.event.pull_request.deletions }}
         run: |
+          # Process the PR body - replace markdown checkboxes with emoji checkboxes
+          PROCESSED_BODY=$(echo "$PR_BODY" | sed 's/\[x\]/✅/g' | sed 's/\[ \]/❌/g')
+          
+          # Escape newlines and quotes for JSON
+          PROCESSED_BODY="${PROCESSED_BODY//$'\n'/\\n}"
+          PROCESSED_BODY="${PROCESSED_BODY//\"/\\\"}"
+          
           # Create the JSON payload directly without complex string manipulation
           cat > discord_payload.json << EOF
           {
             "embeds": [{
-              "title": "🚀 New Update Deployed",
+              "title": "🚀 New Update Deployed!!!",
               "description": "$PR_TITLE",
               "url": "$PR_URL",
               "color": 5814783,
               "fields": [
+                {
+                  "name": "📝 Description",
+                  "value": "$PROCESSED_BODY"
+                },
                 {
                   "name": "👨‍💻 Author",
                   "value": "$PR_USERNAME"
                 },
                 {
                   "name": "📊 Changes",
-                  "value": "**$CHANGED_FILES** files changed with **+$ADDITIONS** additions and **-$DELETIONS** deletions"
+                  "value": "**$CHANGED_FILES** files changed with **$ADDITIONS** additions and **$DELETIONS** deletions"
                 }
               ],
               "thumbnail": {
