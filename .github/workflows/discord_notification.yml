@@ -25,7 +25,15 @@ jobs:
           DELETIONS: ${{ github.event.pull_request.deletions }}
           TARGET_BRANCH: ${{ github.event.pull_request.base.ref }}
         run: |
+          # Process checkboxes in PR body
           PROCESSED_BODY=$(echo "$PR_BODY" | sed 's/\[x\]/✅/g' | sed 's/\[ \]/❌/g')
+          
+          # Truncate body if too long (Discord limit is 1024 chars per field)
+          if [ ${#PROCESSED_BODY} -gt 1000 ]; then
+            TRUNCATED_BODY="${PROCESSED_BODY:0:1000}... *(truncated)*"
+          else
+            TRUNCATED_BODY="$PROCESSED_BODY"
+          fi
           
           # Set different titles and colors based on target branch
           if [ "$TARGET_BRANCH" = "main" ]; then
@@ -36,11 +44,12 @@ jobs:
             COLOR=3447003  
           fi
 
+          # Create Discord payload with proper field length handling
           jq -n \
             --arg title "$TITLE" \
             --arg description "$PR_TITLE" \
             --arg url "$PR_URL" \
-            --arg processedBody "$PROCESSED_BODY" \
+            --arg processedBody "$TRUNCATED_BODY" \
             --arg username "$PR_USERNAME" \
             --arg changed "**$CHANGED_FILES** files changed with **$ADDITIONS** additions and **$DELETIONS** deletions" \
             --arg avatar "$AUTHOR_AVATAR" \
@@ -62,4 +71,20 @@ jobs:
               }]
             }' > discord_payload.json
 
-          curl -H "Content-Type: application/json" -d @discord_payload.json $DISCORD_WEBHOOK
+          # Send to Discord with error handling
+          echo "Sending notification to Discord..."
+          
+          response=$(curl -s -w "%{http_code}" -H "Content-Type: application/json" -d @discord_payload.json "$DISCORD_WEBHOOK")
+          http_code="${response: -3}"
+          response_body="${response%???}"
+          
+          if [ "$http_code" = "204" ]; then
+            echo "✅ Discord notification sent successfully!"
+          else
+            echo "❌ Failed to send Discord notification"
+            echo "HTTP Status Code: $http_code"
+            echo "Response: $response_body"
+            echo "Payload was:"
+            cat discord_payload.json
+            exit 1
+          fi
