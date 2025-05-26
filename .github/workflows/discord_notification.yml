@@ -25,41 +25,85 @@ jobs:
           DELETIONS: ${{ github.event.pull_request.deletions }}
           TARGET_BRANCH: ${{ github.event.pull_request.base.ref }}
         run: |
+          # Process the PR body to convert checkboxes
           PROCESSED_BODY=$(echo "$PR_BODY" | sed 's/\[x\]/✅/g' | sed 's/\[ \]/❌/g')
+          
+          # Truncate body if too long (Discord has character limits)
+          if [ ${#PROCESSED_BODY} -gt 1000 ]; then
+            PROCESSED_BODY="${PROCESSED_BODY:0:997}..."
+          fi
           
           # Set different titles and colors based on target branch
           if [ "$TARGET_BRANCH" = "main" ]; then
-            TITLE="🚀 New Update Deployed!!!"
-            COLOR=5814783  
+            TITLE="🚀 New Update Deployed!"
+            COLOR=5814783  # Purple
           else
             TITLE="🔄 Changes Merged to Development"
-            COLOR=3447003  
+            COLOR=3447003  # Blue
           fi
 
-          jq -n \
-            --arg title "$TITLE" \
-            --arg description "$PR_TITLE" \
-            --arg url "$PR_URL" \
-            --arg processedBody "$PROCESSED_BODY" \
-            --arg username "$PR_USERNAME" \
-            --arg changed "**$CHANGED_FILES** files changed with **$ADDITIONS** additions and **$DELETIONS** deletions" \
-            --arg avatar "$AUTHOR_AVATAR" \
-            --arg footer "PR #$PR_NUMBER merged to $TARGET_BRANCH branch" \
-            --arg color "$COLOR" \
-            '{
-              embeds: [{
-                title: $title,
-                description: $description,
-                url: $url,
-                color: ($color | tonumber),
-                fields: [
-                  {name: "📝 Description", value: $processedBody},
-                  {name: "👨‍💻 Author", value: $username},
-                  {name: "📊 Changes", value: $changed}
-                ],
-                thumbnail: { url: $avatar },
-                footer: { text: $footer }
-              }]
-            }' > discord_payload.json
+          # Create the Discord payload
+          cat > discord_payload.json << EOF
+          {
+            "embeds": [{
+              "title": "$TITLE",
+              "description": "$PR_TITLE",
+              "url": "$PR_URL",
+              "color": $COLOR,
+              "fields": [
+                {
+                  "name": "📝 Description",
+                  "value": "$(echo "$PROCESSED_BODY" | sed 's/"/\\"/g' | tr '\n' ' ' | sed 's/  */ /g')",
+                  "inline": false
+                },
+                {
+                  "name": "👨‍💻 Author",
+                  "value": "$PR_USERNAME",
+                  "inline": true
+                },
+                {
+                  "name": "📊 Changes",
+                  "value": "**$CHANGED_FILES** files • **+$ADDITIONS** **-$DELETIONS**",
+                  "inline": true
+                },
+                {
+                  "name": "🌟 Repository",
+                  "value": "$REPO_NAME",
+                  "inline": true
+                }
+              ],
+              "thumbnail": {
+                "url": "$AUTHOR_AVATAR"
+              },
+              "footer": {
+                "text": "PR #$PR_NUMBER merged to $TARGET_BRANCH"
+              },
+              "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)"
+            }]
+          }
+          EOF
 
-          curl -H "Content-Type: application/json" -d @discord_payload.json $DISCORD_WEBHOOK
+          # Debug: Show the payload (remove this in production)
+          echo "Discord payload:"
+          cat discord_payload.json
+
+          # Send to Discord
+          RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" \
+            -H "Content-Type: application/json" \
+            -d @discord_payload.json \
+            "$DISCORD_WEBHOOK")
+          
+          HTTP_CODE=$(echo "$RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+          RESPONSE_BODY=$(echo "$RESPONSE" | sed '/HTTP_CODE:/d')
+          
+          echo "HTTP Response Code: $HTTP_CODE"
+          echo "Response Body: $RESPONSE_BODY"
+          
+          # Check if the request was successful
+          if [ "$HTTP_CODE" -eq 204 ] || [ "$HTTP_CODE" -eq 200 ]; then
+            echo "✅ Discord notification sent successfully!"
+          else
+            echo "❌ Failed to send Discord notification"
+            echo "Response: $RESPONSE_BODY"
+            exit 1
+          fi
